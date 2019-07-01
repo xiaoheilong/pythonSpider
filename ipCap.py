@@ -18,6 +18,8 @@ import sys
 from PIL import Image
 import pytesseract
 
+from PIL  import Image, ImageDraw
+
 importlib.reload(sys)
 #from mysqldb import ConnectMysql
 #import pymysql
@@ -68,6 +70,10 @@ rep={'O': '0',
            '.': '',
            ';': ''
            }
+
+
+# 二值数组
+t2val = {}
 
 
 def getMainHtml(url):
@@ -122,24 +128,29 @@ def recongnizePicText(picPath):
 	text=pytesseract.image_to_string(Image.open(picPath))
 	return text
 '''
-def  recongnizePicText(name):        
+def recongnizePicText(name):        
     #打开图片  
     im = Image.open(name)  
     #转化到灰度图
     imgry = im.convert('L')
     #保存图像
-    imgry.save('g'+name)  
+    #imgry.save('g'+name)  
     #二值化，采用阈值分割法，threshold为分割点 
-    out = imgry.point(table,'1')  
-    out.save('b'+name)  
+    #out = imgry.point(table,'1')  
+    twoValue(imgry, 100)
+    #out.save('b'+name)  
+    #降噪声
+    clearNoise(imgry , 3, 2) 
+    saveImage('b'+name , imgry.size)
     #识别  
-    text = pytesseract.image_to_string(out)  
-    #识别对吗  
-    print('start recongnize text :' + text)
-    text = text.strip()  
-    text = text.upper();    
+    imageStr = 'b' + name
+    recognizeImag  = Image.open(imageStr)
+    text = pytesseract.image_to_string(recognizeImag)  
+    print('start recongnize the image is ::' + imageStr + ' the  text is :'  + text)
+    text = text.strip(' ') 
+    text = text.upper(); 
     for r in rep:  
-        text = text.replace(r,rep[r])   
+        text = text.replace(r,rep[r])  
     return text 
 
 
@@ -157,6 +168,71 @@ def get_snap(driver, savePath):  # 对目标网页进行截屏。这里截的是
     driver.save_screenshot(savePath)
     page_snap_obj=Image.open(savePath)
     return page_snap_obj
+
+###
+###二值插值
+###
+def twoValue(image, G):
+    for y in range(0, image.size[1]):
+        for x in range(0, image.size[0]):
+            g = image.getpixel((x, y))
+            if g > G:
+                t2val[(x, y)] = 1
+            else:
+                t2val[(x, y)] = 0
+
+
+
+def saveImage(filename, size):
+    image = Image.new("1", size)
+    draw = ImageDraw.Draw(image)
+
+    for x in range(0, size[0]):
+        for y in range(0, size[1]):
+            draw.point((x, y), t2val[(x, y)])
+    image.save(filename)
+
+# 根据一个点A的RGB值，与周围的8个点的RBG值比较，设定一个值N（0 <N <8），当A的RGB值与周围8个点的RGB相等数小于N时，此点为噪点
+# G: Integer 图像二值化阀值
+# N: Integer 降噪率 0 <N <8
+# Z: Integer 降噪次数
+# 输出
+#  0：降噪成功
+#  1：降噪失败
+
+def clearNoise(image, N, Z):
+    for i in range(0, Z):
+        t2val[(0, 0)] = 1
+        t2val[(image.size[0] - 1, image.size[1] - 1)] = 1
+
+        for x in range(1, image.size[0] - 1):
+            for y in range(1, image.size[1] - 1):
+                nearDots = 0
+                L = t2val[(x, y)]
+                if L == t2val[(x - 1, y - 1)]:
+                    nearDots += 1
+                if L == t2val[(x - 1, y)]:
+                    nearDots += 1
+                if L == t2val[(x - 1, y + 1)]:
+                    nearDots += 1
+                if L == t2val[(x, y - 1)]:
+                    nearDots += 1
+                if L == t2val[(x, y + 1)]:
+                    nearDots += 1
+                if L == t2val[(x + 1, y - 1)]:
+                    nearDots += 1
+                if L == t2val[(x + 1, y)]:
+                    nearDots += 1
+                if L == t2val[(x + 1, y + 1)]:
+                    nearDots += 1
+
+                if nearDots < N:
+                    t2val[(x, y)] = 1
+
+
+
+
+
 
 def  capTurePicByName(driver , elementName , savePath):
     img = driver.find_element_by_id(elementName)
@@ -186,9 +262,10 @@ def openBrower(html):
     #print('tokenStr' + tokenStr)
     #os.remove("./verifyPic.png")
     #downloadUrlImage(tokenStr , "verifyPic.png")
-    #cropImage = capTurePicByName(driver , 'captcha' , "html_full.png")
-    #cropImage.save("html_crop.png")
+    cropImage = capTurePicByName(driver , 'captcha' , "html_full.png")
+    cropImage.save("html_crop.png")
     certText = recongnizePicText("html_crop.png")
+
     print('certText :' + certText)
     time.sleep(2000)
 def main():
